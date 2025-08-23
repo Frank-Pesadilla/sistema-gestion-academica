@@ -1,5 +1,6 @@
 package com.gestionacademica.sistema_academico.controller;
 
+import com.gestionacademica.sistema_academico.dto.EstudianteDTO;
 import com.gestionacademica.sistema_academico.entity.Estudiante;
 import com.gestionacademica.sistema_academico.service.EstudianteService;
 import jakarta.validation.Valid;
@@ -20,6 +21,8 @@ public class EstudianteController {
     @Autowired
     private EstudianteService estudianteService;
     
+    // ============ ENDPOINTS CRUD ORIGINALES (Entity) ============
+    
     /**
      * POST - Crear un nuevo estudiante
      * Endpoint: POST /api/estudiantes
@@ -36,58 +39,6 @@ public class EstudianteController {
             
             return new ResponseEntity<>(response, HttpStatus.CREATED);
             
-        } catch (Exception e) {
-            return handleException(e);
-        }
-    }
-    
-    /**
-     * GET - Obtener todos los estudiantes
-     * Endpoint: GET /api/estudiantes
-     */
-    @GetMapping
-    public ResponseEntity<?> obtenerTodos() {
-        try {
-            List<Estudiante> estudiantes = estudianteService.obtenerTodos();
-            
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("message", "Estudiantes obtenidos exitosamente");
-            response.put("data", estudiantes);
-            response.put("total", estudiantes.size());
-            
-            return new ResponseEntity<>(response, HttpStatus.OK);
-            
-        } catch (Exception e) {
-            return handleException(e);
-        }
-    }
-    
-    /**
-     * GET - Obtener estudiante por ID
-     * Endpoint: GET /api/estudiantes/{id}
-     */
-    @GetMapping("/{id}")
-    public ResponseEntity<?> obtenerPorId(@PathVariable Long id) {
-        try {
-            return estudianteService.obtenerPorId(id)
-                .map(estudiante -> {
-                    Map<String, Object> response = new HashMap<>();
-                    response.put("success", true);
-                    response.put("message", "Estudiante encontrado");
-                    response.put("data", estudiante);
-                    
-                    return new ResponseEntity<>(response, HttpStatus.OK);
-                })
-                .orElseGet(() -> {
-                    Map<String, Object> errorResponse = new HashMap<>();
-                    errorResponse.put("success", false);
-                    errorResponse.put("message", "Estudiante no encontrado con ID: " + id);
-                    errorResponse.put("error", "NOT_FOUND");
-                    
-                    return new ResponseEntity<>(errorResponse, HttpStatus.NOT_FOUND);
-                });
-                
         } catch (Exception e) {
             return handleException(e);
         }
@@ -134,6 +85,164 @@ public class EstudianteController {
             return handleException(e);
         }
     }
+    
+    // ============ NUEVOS ENDPOINTS GET QUE RETORNAN DTOs ============
+    
+    /**
+     * GET - Obtener todos los estudiantes (DTO)
+     * Endpoint: GET /api/estudiantes
+     * Parámetros opcionales: 
+     * - ?apellido=gonzalez (filtro por apellido)
+     * - ?semestre=5 (filtro por semestre actual)
+     * - ?edadMinima=18&edadMaxima=25 (filtro por rango de edad)
+     */
+    @GetMapping
+    public ResponseEntity<?> obtenerTodos(@RequestParam(required = false) String apellido,
+                                         @RequestParam(required = false) String semestre,
+                                         @RequestParam(required = false) Integer edadMinima,
+                                         @RequestParam(required = false) Integer edadMaxima) {
+        try {
+            List<EstudianteDTO> estudiantes;
+            String filtroAplicado = null;
+            
+            // Aplicar filtros si se proporcionan (prioridad: apellido > semestre > rango edad)
+            if (apellido != null && !apellido.trim().isEmpty()) {
+                estudiantes = estudianteService.buscarPorApellidoDTO(apellido);
+                filtroAplicado = "apellido: " + apellido;
+            } else if (semestre != null && !semestre.trim().isEmpty()) {
+                estudiantes = estudianteService.buscarPorSemestreDTO(semestre);
+                filtroAplicado = "semestre: " + semestre;
+            } else if (edadMinima != null && edadMaxima != null) {
+                estudiantes = estudianteService.buscarPorRangoEdadDTO(edadMinima, edadMaxima);
+                filtroAplicado = "edad entre " + edadMinima + " y " + edadMaxima + " años";
+            } else {
+                estudiantes = estudianteService.obtenerTodosDTO();
+            }
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "Estudiantes obtenidos exitosamente");
+            response.put("data", estudiantes);
+            response.put("total", estudiantes.size());
+            
+            // Agregar información del filtro aplicado
+            if (filtroAplicado != null) {
+                response.put("filtroAplicado", filtroAplicado);
+            }
+            
+            return new ResponseEntity<>(response, HttpStatus.OK);
+            
+        } catch (Exception e) {
+            return handleException(e);
+        }
+    }
+    
+    /**
+     * GET - Obtener estudiante por ID (DTO)
+     * Endpoint: GET /api/estudiantes/{id}
+     */
+    @GetMapping("/{id}")
+    public ResponseEntity<?> obtenerPorId(@PathVariable Long id) {
+        try {
+            return estudianteService.obtenerPorIdDTO(id)
+                .map(estudiante -> {
+                    Map<String, Object> response = new HashMap<>();
+                    response.put("success", true);
+                    response.put("message", "Estudiante encontrado");
+                    response.put("data", estudiante);
+                    
+                    return new ResponseEntity<>(response, HttpStatus.OK);
+                })
+                .orElseGet(() -> {
+                    Map<String, Object> errorResponse = new HashMap<>();
+                    errorResponse.put("success", false);
+                    errorResponse.put("message", "Estudiante no encontrado con ID: " + id);
+                    errorResponse.put("error", "NOT_FOUND");
+                    
+                    return new ResponseEntity<>(errorResponse, HttpStatus.NOT_FOUND);
+                });
+                
+        } catch (Exception e) {
+            return handleException(e);
+        }
+    }
+    
+    // ============ ENDPOINTS DE FILTRADO ESPECÍFICOS ============
+    
+    /**
+     * GET - Filtrar estudiantes por apellido
+     * Endpoint: GET /api/estudiantes/filtro/apellido
+     * Parámetro: ?valor=gonzalez
+     */
+    @GetMapping("/filtro/apellido")
+    public ResponseEntity<?> filtrarPorApellido(@RequestParam String valor) {
+        try {
+            List<EstudianteDTO> estudiantes = estudianteService.buscarPorApellidoDTO(valor);
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "Filtrado por apellido completado");
+            response.put("data", estudiantes);
+            response.put("total", estudiantes.size());
+            response.put("filtroAplicado", "apellido: " + valor);
+            
+            return new ResponseEntity<>(response, HttpStatus.OK);
+            
+        } catch (Exception e) {
+            return handleException(e);
+        }
+    }
+    
+    /**
+     * GET - Filtrar estudiantes por semestre
+     * Endpoint: GET /api/estudiantes/filtro/semestre
+     * Parámetro: ?valor=5° Semestre
+     */
+    @GetMapping("/filtro/semestre")
+    public ResponseEntity<?> filtrarPorSemestre(@RequestParam String valor) {
+        try {
+            List<EstudianteDTO> estudiantes = estudianteService.buscarPorSemestreDTO(valor);
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "Filtrado por semestre completado");
+            response.put("data", estudiantes);
+            response.put("total", estudiantes.size());
+            response.put("filtroAplicado", "semestre: " + valor);
+            
+            return new ResponseEntity<>(response, HttpStatus.OK);
+            
+        } catch (Exception e) {
+            return handleException(e);
+        }
+    }
+    
+    /**
+     * GET - Filtrar estudiantes por rango de edad
+     * Endpoint: GET /api/estudiantes/filtro/edad
+     * Parámetros: ?minima=18&maxima=25
+     */
+    @GetMapping("/filtro/edad")
+    public ResponseEntity<?> filtrarPorRangoEdad(@RequestParam Integer minima, 
+                                                @RequestParam Integer maxima) {
+        try {
+            List<EstudianteDTO> estudiantes = estudianteService.buscarPorRangoEdadDTO(minima, maxima);
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "Filtrado por rango de edad completado");
+            response.put("data", estudiantes);
+            response.put("total", estudiantes.size());
+            response.put("filtroAplicado", "edad entre " + minima + " y " + maxima + " años");
+            
+            return new ResponseEntity<>(response, HttpStatus.OK);
+            
+        } catch (Exception e) {
+            return handleException(e);
+        }
+    }
+    
+    // ============ ENDPOINTS ADICIONALES DE BÚSQUEDA (Entity - para compatibilidad) ============
     
     /**
      * GET - Buscar estudiante por carnet (endpoint adicional)
@@ -190,28 +299,6 @@ public class EstudianteController {
                     return new ResponseEntity<>(errorResponse, HttpStatus.NOT_FOUND);
                 });
                 
-        } catch (Exception e) {
-            return handleException(e);
-        }
-    }
-    
-    /**
-     * GET - Buscar estudiantes por año de ingreso (endpoint adicional)
-     * Endpoint: GET /api/estudiantes/buscar/año/{año}
-     */
-    @GetMapping("/buscar/año/{año}")
-    public ResponseEntity<?> buscarPorAñoIngreso(@PathVariable int año) {
-        try {
-            List<Estudiante> estudiantes = estudianteService.buscarPorAñoIngreso(año);
-            
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("message", "Búsqueda completada");
-            response.put("data", estudiantes);
-            response.put("total", estudiantes.size());
-            
-            return new ResponseEntity<>(response, HttpStatus.OK);
-            
         } catch (Exception e) {
             return handleException(e);
         }

@@ -1,5 +1,6 @@
 package com.gestionacademica.sistema_academico.service;
 
+import com.gestionacademica.sistema_academico.dto.EstudianteDTO;
 import com.gestionacademica.sistema_academico.entity.Estudiante;
 import com.gestionacademica.sistema_academico.repository.EstudianteRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -7,8 +8,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.Period;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional
@@ -17,22 +21,18 @@ public class EstudianteService {
     @Autowired
     private EstudianteRepository estudianteRepository;
     
+    // ============ MÉTODOS CRUD ORIGINALES (mantener para POST, PUT, DELETE) ============
+    
     /**
      * Crear un nuevo estudiante
-     * @param estudiante El estudiante a crear
-     * @return El estudiante creado
-     * @throws RuntimeException si ya existe un estudiante con el mismo carnet o email
      */
     public Estudiante crearEstudiante(Estudiante estudiante) {
-        // Validar datos del estudiante
         validarEstudiante(estudiante);
         
-        // Validar que no exista un estudiante con el mismo carnet
         if (estudianteRepository.existsByCarnet(estudiante.getCarnet())) {
             throw new RuntimeException("Ya existe un estudiante con el carnet: " + estudiante.getCarnet());
         }
         
-        // Validar que no exista un estudiante con el mismo email
         if (estudianteRepository.existsByEmail(estudiante.getEmail())) {
             throw new RuntimeException("Ya existe un estudiante con el email: " + estudiante.getEmail());
         }
@@ -45,66 +45,27 @@ public class EstudianteService {
     }
     
     /**
-     * Obtener todos los estudiantes
-     * @return Lista de todos los estudiantes
-     */
-    @Transactional(readOnly = true)
-    public List<Estudiante> obtenerTodos() {
-        try {
-            return estudianteRepository.findAll();
-        } catch (Exception e) {
-            throw new RuntimeException("Error al obtener los estudiantes: " + e.getMessage());
-        }
-    }
-    
-    /**
-     * Obtener un estudiante por su ID
-     * @param id ID del estudiante
-     * @return Optional con el estudiante si existe
-     */
-    @Transactional(readOnly = true)
-    public Optional<Estudiante> obtenerPorId(Long id) {
-        if (id == null || id <= 0) {
-            throw new IllegalArgumentException("El ID debe ser un número positivo");
-        }
-        
-        try {
-            return estudianteRepository.findById(id);
-        } catch (Exception e) {
-            throw new RuntimeException("Error al buscar el estudiante: " + e.getMessage());
-        }
-    }
-    
-    /**
      * Actualizar un estudiante existente
-     * @param id ID del estudiante a actualizar
-     * @param estudianteActualizado Datos actualizados del estudiante
-     * @return El estudiante actualizado
-     * @throws RuntimeException si el estudiante no existe
      */
     public Estudiante actualizarEstudiante(Long id, Estudiante estudianteActualizado) {
         if (id == null || id <= 0) {
             throw new IllegalArgumentException("El ID debe ser un número positivo");
         }
         
-        // Validar datos del estudiante actualizado
         validarEstudiante(estudianteActualizado);
         
         return estudianteRepository.findById(id)
             .map(estudianteExistente -> {
-                // Validar carnet único (solo si cambió)
                 if (!estudianteExistente.getCarnet().equals(estudianteActualizado.getCarnet()) &&
                     estudianteRepository.existsByCarnet(estudianteActualizado.getCarnet())) {
                     throw new RuntimeException("Ya existe un estudiante con el carnet: " + estudianteActualizado.getCarnet());
                 }
                 
-                // Validar email único (solo si cambió)
                 if (!estudianteExistente.getEmail().equals(estudianteActualizado.getEmail()) &&
                     estudianteRepository.existsByEmail(estudianteActualizado.getEmail())) {
                     throw new RuntimeException("Ya existe un estudiante con el email: " + estudianteActualizado.getEmail());
                 }
                 
-                // Actualizar campos
                 estudianteExistente.setCarnet(estudianteActualizado.getCarnet());
                 estudianteExistente.setNombre(estudianteActualizado.getNombre());
                 estudianteExistente.setApellido(estudianteActualizado.getApellido());
@@ -124,8 +85,6 @@ public class EstudianteService {
     
     /**
      * Eliminar un estudiante por su ID
-     * @param id ID del estudiante a eliminar
-     * @throws RuntimeException si el estudiante no existe
      */
     public void eliminarEstudiante(Long id) {
         if (id == null || id <= 0) {
@@ -143,11 +102,189 @@ public class EstudianteService {
         }
     }
     
+    // ============ NUEVOS MÉTODOS QUE RETORNAN DTOs ============
+    
     /**
-     * Buscar estudiante por carnet
-     * @param carnet Carnet del estudiante
-     * @return Optional con el estudiante si existe
+     * Obtener todos los estudiantes como DTOs
      */
+    @Transactional(readOnly = true)
+    public List<EstudianteDTO> obtenerTodosDTO() {
+        try {
+            List<Estudiante> estudiantes = estudianteRepository.findAll();
+            return estudiantes.stream()
+                    .map(this::convertirAEstudianteDTO)
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            throw new RuntimeException("Error al obtener los estudiantes: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * Obtener un estudiante por ID como DTO
+     */
+    @Transactional(readOnly = true)
+    public Optional<EstudianteDTO> obtenerPorIdDTO(Long id) {
+        if (id == null || id <= 0) {
+            throw new IllegalArgumentException("El ID debe ser un número positivo");
+        }
+        
+        try {
+            return estudianteRepository.findById(id)
+                    .map(this::convertirAEstudianteDTO);
+        } catch (Exception e) {
+            throw new RuntimeException("Error al buscar el estudiante: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * FILTRO 1: Buscar estudiantes por apellido como DTOs
+     */
+    @Transactional(readOnly = true)
+    public List<EstudianteDTO> buscarPorApellidoDTO(String apellido) {
+        if (apellido == null || apellido.trim().isEmpty()) {
+            throw new IllegalArgumentException("El apellido no puede estar vacío");
+        }
+        
+        try {
+            List<Estudiante> estudiantes = estudianteRepository.findByNombreOrApellidoContaining(apellido.trim());
+            return estudiantes.stream()
+                    .filter(est -> est.getApellido().toLowerCase().contains(apellido.toLowerCase()))
+                    .map(this::convertirAEstudianteDTO)
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            throw new RuntimeException("Error al buscar estudiantes por apellido: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * FILTRO 2: Buscar estudiantes por semestre actual
+     */
+    @Transactional(readOnly = true)
+    public List<EstudianteDTO> buscarPorSemestreDTO(String semestre) {
+        if (semestre == null || semestre.trim().isEmpty()) {
+            throw new IllegalArgumentException("El semestre no puede estar vacío");
+        }
+        
+        try {
+            List<Estudiante> estudiantes = estudianteRepository.findAll();
+            return estudiantes.stream()
+                    .map(this::convertirAEstudianteDTO)
+                    .filter(estDTO -> estDTO.getSemestreActual().equalsIgnoreCase(semestre.trim()))
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            throw new RuntimeException("Error al buscar estudiantes por semestre: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * FILTRO 3: Buscar estudiantes por rango de edad
+     */
+    @Transactional(readOnly = true)
+    public List<EstudianteDTO> buscarPorRangoEdadDTO(Integer edadMinima, Integer edadMaxima) {
+        if (edadMinima == null || edadMaxima == null || edadMinima < 0 || edadMaxima < 0 || edadMinima > edadMaxima) {
+            throw new IllegalArgumentException("El rango de edad debe ser válido");
+        }
+        
+        try {
+            List<Estudiante> estudiantes = estudianteRepository.findAll();
+            return estudiantes.stream()
+                    .map(this::convertirAEstudianteDTO)
+                    .filter(estDTO -> {
+                        Integer edad = estDTO.getEdad();
+                        return edad != null && edad >= edadMinima && edad <= edadMaxima;
+                    })
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            throw new RuntimeException("Error al buscar estudiantes por rango de edad: " + e.getMessage());
+        }
+    }
+    
+    // ============ MÉTODOS DE CONVERSIÓN PRIVADOS ============
+    
+    /**
+     * Convierte una entidad Estudiante a EstudianteDTO
+     */
+    private EstudianteDTO convertirAEstudianteDTO(Estudiante estudiante) {
+        if (estudiante == null) {
+            return null;
+        }
+        
+        // Combinar nombre y apellido
+        String nombreCompleto = estudiante.getNombre() + " " + estudiante.getApellido();
+        
+        // Calcular edad
+        Integer edad = null;
+        if (estudiante.getFechaNacimiento() != null) {
+            edad = Period.between(estudiante.getFechaNacimiento(), LocalDate.now()).getYears();
+        }
+        
+        // Calcular semestre actual
+        String semestreActual = calcularSemestreActual(estudiante.getFechaIngreso());
+        
+        // Estado académico (por ahora siempre activo, se puede expandir)
+        String estadoAcademico = "Activo";
+        
+        return new EstudianteDTO(
+            estudiante.getId(),
+            estudiante.getCarnet(),
+            nombreCompleto,
+            estudiante.getEmail(),
+            estudiante.getTelefono(),
+            edad,
+            estudiante.getFechaIngreso(),
+            semestreActual,
+            estadoAcademico
+        );
+    }
+    
+    /**
+     * Calcula el semestre actual basado en la fecha de ingreso
+     */
+    private String calcularSemestreActual(LocalDate fechaIngreso) {
+        if (fechaIngreso == null) {
+            return "Sin determinar";
+        }
+        
+        LocalDate ahora = LocalDate.now();
+        long mesesTranscurridos = ChronoUnit.MONTHS.between(fechaIngreso, ahora);
+        
+        // Cada semestre son aproximadamente 6 meses
+        int semestre = (int) (mesesTranscurridos / 6) + 1;
+        
+        // Limitar a un máximo razonable
+        if (semestre > 12) {
+            semestre = 12;
+        } else if (semestre < 1) {
+            semestre = 1;
+        }
+        
+        return semestre + "° Semestre";
+    }
+    
+    // ============ MÉTODOS ORIGINALES PARA COMPATIBILIDAD ============
+    
+    @Transactional(readOnly = true)
+    public List<Estudiante> obtenerTodos() {
+        try {
+            return estudianteRepository.findAll();
+        } catch (Exception e) {
+            throw new RuntimeException("Error al obtener los estudiantes: " + e.getMessage());
+        }
+    }
+    
+    @Transactional(readOnly = true)
+    public Optional<Estudiante> obtenerPorId(Long id) {
+        if (id == null || id <= 0) {
+            throw new IllegalArgumentException("El ID debe ser un número positivo");
+        }
+        
+        try {
+            return estudianteRepository.findById(id);
+        } catch (Exception e) {
+            throw new RuntimeException("Error al buscar el estudiante: " + e.getMessage());
+        }
+    }
+    
     @Transactional(readOnly = true)
     public Optional<Estudiante> buscarPorCarnet(String carnet) {
         if (carnet == null || carnet.trim().isEmpty()) {
@@ -161,11 +298,6 @@ public class EstudianteService {
         }
     }
     
-    /**
-     * Buscar estudiante por email
-     * @param email Email del estudiante
-     * @return Optional con el estudiante si existe
-     */
     @Transactional(readOnly = true)
     public Optional<Estudiante> buscarPorEmail(String email) {
         if (email == null || email.trim().isEmpty()) {
@@ -179,11 +311,6 @@ public class EstudianteService {
         }
     }
     
-    /**
-     * Buscar estudiantes por nombre o apellido
-     * @param termino Término de búsqueda
-     * @return Lista de estudiantes que contienen el término
-     */
     @Transactional(readOnly = true)
     public List<Estudiante> buscarPorNombreOApellido(String termino) {
         if (termino == null || termino.trim().isEmpty()) {
@@ -197,11 +324,6 @@ public class EstudianteService {
         }
     }
     
-    /**
-     * Buscar estudiantes por año de ingreso
-     * @param año Año de ingreso
-     * @return Lista de estudiantes que ingresaron en ese año
-     */
     @Transactional(readOnly = true)
     public List<Estudiante> buscarPorAñoIngreso(int año) {
         if (año < 1900 || año > LocalDate.now().getYear() + 1) {
@@ -215,10 +337,6 @@ public class EstudianteService {
         }
     }
     
-    /**
-     * Obtener estudiantes ordenados por fecha de ingreso
-     * @return Lista de estudiantes ordenados por fecha de ingreso (más recientes primero)
-     */
     @Transactional(readOnly = true)
     public List<Estudiante> obtenerOrdenadosPorFechaIngreso() {
         try {
@@ -228,11 +346,6 @@ public class EstudianteService {
         }
     }
     
-    /**
-     * Verificar si existe un estudiante con el carnet dado
-     * @param carnet Carnet a verificar
-     * @return true si existe, false en caso contrario
-     */
     @Transactional(readOnly = true)
     public boolean existePorCarnet(String carnet) {
         if (carnet == null || carnet.trim().isEmpty()) {
@@ -246,11 +359,6 @@ public class EstudianteService {
         }
     }
     
-    /**
-     * Verificar si existe un estudiante con el email dado
-     * @param email Email a verificar
-     * @return true si existe, false en caso contrario
-     */
     @Transactional(readOnly = true)
     public boolean existePorEmail(String email) {
         if (email == null || email.trim().isEmpty()) {
@@ -266,8 +374,6 @@ public class EstudianteService {
     
     /**
      * Validar los datos de un estudiante
-     * @param estudiante El estudiante a validar
-     * @throws IllegalArgumentException si los datos no son válidos
      */
     private void validarEstudiante(Estudiante estudiante) {
         if (estudiante == null) {

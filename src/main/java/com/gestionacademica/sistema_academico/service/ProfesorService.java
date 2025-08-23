@@ -1,13 +1,17 @@
 package com.gestionacademica.sistema_academico.service;
 
+import com.gestionacademica.sistema_academico.dto.ProfesorDTO;
 import com.gestionacademica.sistema_academico.entity.Profesor;
 import com.gestionacademica.sistema_academico.repository.ProfesorRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
+import java.time.Period;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional
@@ -16,14 +20,12 @@ public class ProfesorService {
     @Autowired
     private ProfesorRepository profesorRepository;
     
+    // ============ MÉTODOS CRUD ORIGINALES (mantener para POST, PUT, DELETE) ============
+    
     /**
      * Crear un nuevo profesor
-     * @param profesor El profesor a crear
-     * @return El profesor creado
-     * @throws RuntimeException si ya existe un profesor con el mismo email
      */
     public Profesor crearProfesor(Profesor profesor) {
-        // Validar que no exista un profesor con el mismo email
         if (profesorRepository.existsByEmail(profesor.getEmail())) {
             throw new RuntimeException("Ya existe un profesor con el email: " + profesor.getEmail());
         }
@@ -36,42 +38,7 @@ public class ProfesorService {
     }
     
     /**
-     * Obtener todos los profesores
-     * @return Lista de todos los profesores
-     */
-    @Transactional(readOnly = true)
-    public List<Profesor> obtenerTodos() {
-        try {
-            return profesorRepository.findAll();
-        } catch (Exception e) {
-            throw new RuntimeException("Error al obtener los profesores: " + e.getMessage());
-        }
-    }
-    
-    /**
-     * Obtener un profesor por su ID
-     * @param id ID del profesor
-     * @return Optional con el profesor si existe
-     */
-    @Transactional(readOnly = true)
-    public Optional<Profesor> obtenerPorId(Long id) {
-        if (id == null || id <= 0) {
-            throw new IllegalArgumentException("El ID debe ser un número positivo");
-        }
-        
-        try {
-            return profesorRepository.findById(id);
-        } catch (Exception e) {
-            throw new RuntimeException("Error al buscar el profesor: " + e.getMessage());
-        }
-    }
-    
-    /**
      * Actualizar un profesor existente
-     * @param id ID del profesor a actualizar
-     * @param profesorActualizado Datos actualizados del profesor
-     * @return El profesor actualizado
-     * @throws RuntimeException si el profesor no existe
      */
     public Profesor actualizarProfesor(Long id, Profesor profesorActualizado) {
         if (id == null || id <= 0) {
@@ -80,13 +47,11 @@ public class ProfesorService {
         
         return profesorRepository.findById(id)
             .map(profesorExistente -> {
-                // Validar email único (solo si cambió)
                 if (!profesorExistente.getEmail().equals(profesorActualizado.getEmail()) &&
                     profesorRepository.existsByEmail(profesorActualizado.getEmail())) {
                     throw new RuntimeException("Ya existe un profesor con el email: " + profesorActualizado.getEmail());
                 }
                 
-                // Actualizar campos
                 profesorExistente.setNombre(profesorActualizado.getNombre());
                 profesorExistente.setApellido(profesorActualizado.getApellido());
                 profesorExistente.setEmail(profesorActualizado.getEmail());
@@ -105,8 +70,6 @@ public class ProfesorService {
     
     /**
      * Eliminar un profesor por su ID
-     * @param id ID del profesor a eliminar
-     * @throws RuntimeException si el profesor no existe
      */
     public void eliminarProfesor(Long id) {
         if (id == null || id <= 0) {
@@ -124,11 +87,137 @@ public class ProfesorService {
         }
     }
     
+    // ============ NUEVOS MÉTODOS QUE RETORNAN DTOs ============
+    
     /**
-     * Buscar profesores por email
-     * @param email Email del profesor
-     * @return Optional con el profesor si existe
+     * Obtener todos los profesores como DTOs
      */
+    @Transactional(readOnly = true)
+    public List<ProfesorDTO> obtenerTodosDTO() {
+        try {
+            List<Profesor> profesores = profesorRepository.findAll();
+            return profesores.stream()
+                    .map(this::convertirAProfesorDTO)
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            throw new RuntimeException("Error al obtener los profesores: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * Obtener un profesor por ID como DTO
+     */
+    @Transactional(readOnly = true)
+    public Optional<ProfesorDTO> obtenerPorIdDTO(Long id) {
+        if (id == null || id <= 0) {
+            throw new IllegalArgumentException("El ID debe ser un número positivo");
+        }
+        
+        try {
+            return profesorRepository.findById(id)
+                    .map(this::convertirAProfesorDTO);
+        } catch (Exception e) {
+            throw new RuntimeException("Error al buscar el profesor: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * FILTRO 1: Buscar profesores por especialidad como DTOs
+     */
+    @Transactional(readOnly = true)
+    public List<ProfesorDTO> buscarPorEspecialidadDTO(String especialidad) {
+        if (especialidad == null || especialidad.trim().isEmpty()) {
+            throw new IllegalArgumentException("La especialidad no puede estar vacía");
+        }
+        
+        try {
+            List<Profesor> profesores = profesorRepository.findByEspecialidadContainingIgnoreCase(especialidad.trim());
+            return profesores.stream()
+                    .map(this::convertirAProfesorDTO)
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            throw new RuntimeException("Error al buscar profesores por especialidad: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * FILTRO 2: Buscar profesores por años de experiencia mínimos
+     */
+    @Transactional(readOnly = true)
+    public List<ProfesorDTO> buscarPorAñosExperienciaMinima(Integer añosMinimos) {
+        if (añosMinimos == null || añosMinimos < 0) {
+            throw new IllegalArgumentException("Los años mínimos deben ser un número positivo");
+        }
+        
+        try {
+            List<Profesor> profesores = profesorRepository.findAll();
+            return profesores.stream()
+                    .filter(profesor -> {
+                        if (profesor.getFechaContratacion() == null) return false;
+                        int añosExp = Period.between(profesor.getFechaContratacion(), LocalDate.now()).getYears();
+                        return añosExp >= añosMinimos;
+                    })
+                    .map(this::convertirAProfesorDTO)
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            throw new RuntimeException("Error al buscar profesores por experiencia: " + e.getMessage());
+        }
+    }
+    
+    // ============ MÉTODOS DE CONVERSIÓN PRIVADOS ============
+    
+    /**
+     * Convierte una entidad Profesor a ProfesorDTO
+     */
+    private ProfesorDTO convertirAProfesorDTO(Profesor profesor) {
+        if (profesor == null) {
+            return null;
+        }
+        
+        // Combinar nombre y apellido
+        String nombreCompleto = profesor.getNombre() + " " + profesor.getApellido();
+        
+        // Calcular años de experiencia
+        Integer añosExperiencia = 0;
+        if (profesor.getFechaContratacion() != null) {
+            añosExperiencia = Period.between(profesor.getFechaContratacion(), LocalDate.now()).getYears();
+        }
+        
+        return new ProfesorDTO(
+            profesor.getId(),
+            nombreCompleto,
+            profesor.getEmail(),
+            profesor.getTelefono(),
+            profesor.getEspecialidad(),
+            profesor.getFechaContratacion(),
+            añosExperiencia
+        );
+    }
+    
+    // ============ MÉTODOS ORIGINALES PARA COMPATIBILIDAD ============
+    
+    @Transactional(readOnly = true)
+    public List<Profesor> obtenerTodos() {
+        try {
+            return profesorRepository.findAll();
+        } catch (Exception e) {
+            throw new RuntimeException("Error al obtener los profesores: " + e.getMessage());
+        }
+    }
+    
+    @Transactional(readOnly = true)
+    public Optional<Profesor> obtenerPorId(Long id) {
+        if (id == null || id <= 0) {
+            throw new IllegalArgumentException("El ID debe ser un número positivo");
+        }
+        
+        try {
+            return profesorRepository.findById(id);
+        } catch (Exception e) {
+            throw new RuntimeException("Error al buscar el profesor: " + e.getMessage());
+        }
+    }
+    
     @Transactional(readOnly = true)
     public Optional<Profesor> buscarPorEmail(String email) {
         if (email == null || email.trim().isEmpty()) {
@@ -142,11 +231,6 @@ public class ProfesorService {
         }
     }
     
-    /**
-     * Buscar profesores por especialidad
-     * @param especialidad Especialidad a buscar
-     * @return Lista de profesores con esa especialidad
-     */
     @Transactional(readOnly = true)
     public List<Profesor> buscarPorEspecialidad(String especialidad) {
         if (especialidad == null || especialidad.trim().isEmpty()) {
@@ -160,11 +244,6 @@ public class ProfesorService {
         }
     }
     
-    /**
-     * Verificar si existe un profesor con el email dado
-     * @param email Email a verificar
-     * @return true si existe, false en caso contrario
-     */
     @Transactional(readOnly = true)
     public boolean existePorEmail(String email) {
         if (email == null || email.trim().isEmpty()) {

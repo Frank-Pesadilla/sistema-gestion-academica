@@ -1,5 +1,6 @@
 package com.gestionacademica.sistema_academico.service;
 
+import com.gestionacademica.sistema_academico.dto.CursoDTO;
 import com.gestionacademica.sistema_academico.entity.Curso;
 import com.gestionacademica.sistema_academico.repository.CursoRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -8,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional
@@ -16,19 +18,16 @@ public class CursoService {
     @Autowired
     private CursoRepository cursoRepository;
     
+    // ============ MÉTODOS CRUD ORIGINALES (mantener para POST, PUT, DELETE) ============
+    
     /**
      * Crear un nuevo curso
-     * @param curso El curso a crear
-     * @return El curso creado
-     * @throws RuntimeException si ya existe un curso con el mismo código
      */
     public Curso crearCurso(Curso curso) {
-        // Validar que no exista un curso con el mismo código
         if (cursoRepository.existsByCodigo(curso.getCodigo())) {
             throw new RuntimeException("Ya existe un curso con el código: " + curso.getCodigo());
         }
         
-        // Validaciones adicionales
         validarCurso(curso);
         
         try {
@@ -39,60 +38,22 @@ public class CursoService {
     }
     
     /**
-     * Obtener todos los cursos
-     * @return Lista de todos los cursos
-     */
-    @Transactional(readOnly = true)
-    public List<Curso> obtenerTodos() {
-        try {
-            return cursoRepository.findAll();
-        } catch (Exception e) {
-            throw new RuntimeException("Error al obtener los cursos: " + e.getMessage());
-        }
-    }
-    
-    /**
-     * Obtener un curso por su ID
-     * @param id ID del curso
-     * @return Optional con el curso si existe
-     */
-    @Transactional(readOnly = true)
-    public Optional<Curso> obtenerPorId(Long id) {
-        if (id == null || id <= 0) {
-            throw new IllegalArgumentException("El ID debe ser un número positivo");
-        }
-        
-        try {
-            return cursoRepository.findById(id);
-        } catch (Exception e) {
-            throw new RuntimeException("Error al buscar el curso: " + e.getMessage());
-        }
-    }
-    
-    /**
      * Actualizar un curso existente
-     * @param id ID del curso a actualizar
-     * @param cursoActualizado Datos actualizados del curso
-     * @return El curso actualizado
-     * @throws RuntimeException si el curso no existe
      */
     public Curso actualizarCurso(Long id, Curso cursoActualizado) {
         if (id == null || id <= 0) {
             throw new IllegalArgumentException("El ID debe ser un número positivo");
         }
         
-        // Validar datos del curso actualizado
         validarCurso(cursoActualizado);
         
         return cursoRepository.findById(id)
             .map(cursoExistente -> {
-                // Validar código único (solo si cambió)
                 if (!cursoExistente.getCodigo().equals(cursoActualizado.getCodigo()) &&
                     cursoRepository.existsByCodigo(cursoActualizado.getCodigo())) {
                     throw new RuntimeException("Ya existe un curso con el código: " + cursoActualizado.getCodigo());
                 }
                 
-                // Actualizar campos
                 cursoExistente.setCodigo(cursoActualizado.getCodigo());
                 cursoExistente.setNombre(cursoActualizado.getNombre());
                 cursoExistente.setDescripcion(cursoActualizado.getDescripcion());
@@ -110,8 +71,6 @@ public class CursoService {
     
     /**
      * Eliminar un curso por su ID
-     * @param id ID del curso a eliminar
-     * @throws RuntimeException si el curso no existe
      */
     public void eliminarCurso(Long id) {
         if (id == null || id <= 0) {
@@ -129,11 +88,196 @@ public class CursoService {
         }
     }
     
+    // ============ NUEVOS MÉTODOS QUE RETORNAN DTOs ============
+    
     /**
-     * Buscar curso por código
-     * @param codigo Código del curso
-     * @return Optional con el curso si existe
+     * Obtener todos los cursos como DTOs
      */
+    @Transactional(readOnly = true)
+    public List<CursoDTO> obtenerTodosDTO() {
+        try {
+            List<Curso> cursos = cursoRepository.findAll();
+            return cursos.stream()
+                    .map(this::convertirACursoDTO)
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            throw new RuntimeException("Error al obtener los cursos: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * Obtener un curso por ID como DTO
+     */
+    @Transactional(readOnly = true)
+    public Optional<CursoDTO> obtenerPorIdDTO(Long id) {
+        if (id == null || id <= 0) {
+            throw new IllegalArgumentException("El ID debe ser un número positivo");
+        }
+        
+        try {
+            return cursoRepository.findById(id)
+                    .map(this::convertirACursoDTO);
+        } catch (Exception e) {
+            throw new RuntimeException("Error al buscar el curso: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * FILTRO 1: Buscar cursos por número de créditos como DTOs
+     */
+    @Transactional(readOnly = true)
+    public List<CursoDTO> buscarPorCreditosDTO(Integer creditos) {
+        if (creditos == null || creditos <= 0) {
+            throw new IllegalArgumentException("Los créditos deben ser un número positivo");
+        }
+        
+        try {
+            List<Curso> cursos = cursoRepository.findByCreditos(creditos);
+            return cursos.stream()
+                    .map(this::convertirACursoDTO)
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            throw new RuntimeException("Error al buscar cursos por créditos: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * FILTRO 2: Buscar cursos por nivel de dificultad
+     */
+    @Transactional(readOnly = true)
+    public List<CursoDTO> buscarPorNivelDificultadDTO(String nivel) {
+        if (nivel == null || nivel.trim().isEmpty()) {
+            throw new IllegalArgumentException("El nivel no puede estar vacío");
+        }
+        
+        try {
+            List<Curso> cursos = cursoRepository.findAll();
+            return cursos.stream()
+                    .map(this::convertirACursoDTO)
+                    .filter(cursoDTO -> cursoDTO.getNivelDificultad().equalsIgnoreCase(nivel.trim()))
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            throw new RuntimeException("Error al buscar cursos por nivel: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * FILTRO 3: Buscar cursos por carga académica
+     */
+    @Transactional(readOnly = true)
+    public List<CursoDTO> buscarPorCargaAcademicaDTO(String carga) {
+        if (carga == null || carga.trim().isEmpty()) {
+            throw new IllegalArgumentException("La carga académica no puede estar vacía");
+        }
+        
+        try {
+            List<Curso> cursos = cursoRepository.findAll();
+            return cursos.stream()
+                    .map(this::convertirACursoDTO)
+                    .filter(cursoDTO -> cursoDTO.getCargaAcademica().equalsIgnoreCase(carga.trim()))
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            throw new RuntimeException("Error al buscar cursos por carga académica: " + e.getMessage());
+        }
+    }
+    
+    // ============ MÉTODOS DE CONVERSIÓN PRIVADOS ============
+    
+    /**
+     * Convierte una entidad Curso a CursoDTO
+     */
+    private CursoDTO convertirACursoDTO(Curso curso) {
+        if (curso == null) {
+            return null;
+        }
+        
+        // Determinar nivel de dificultad basado en el código del curso
+        String nivelDificultad = determinarNivelDificultad(curso.getCodigo());
+        
+        // Determinar carga académica basada en créditos y horas
+        String cargaAcademica = determinarCargaAcademica(curso.getCreditos(), curso.getHorasSemanales());
+        
+        return new CursoDTO(
+            curso.getId(),
+            curso.getCodigo(),
+            curso.getNombre(),
+            curso.getDescripcion(),
+            curso.getCreditos(),
+            curso.getHorasSemanales(),
+            nivelDificultad,
+            cargaAcademica
+        );
+    }
+    
+    /**
+     * Determina el nivel de dificultad basado en el código del curso
+     */
+    private String determinarNivelDificultad(String codigo) {
+        if (codigo == null || codigo.length() < 4) {
+            return "Básico";
+        }
+        
+        // Extraer el número del código (ej: MAT101 -> 101)
+        String numeroStr = codigo.substring(3);
+        try {
+            int numero = Integer.parseInt(numeroStr);
+            if (numero >= 100 && numero <= 199) {
+                return "Básico";
+            } else if (numero >= 200 && numero <= 299) {
+                return "Intermedio";
+            } else if (numero >= 300) {
+                return "Avanzado";
+            } else {
+                return "Básico";
+            }
+        } catch (NumberFormatException e) {
+            return "Básico";
+        }
+    }
+    
+    /**
+     * Determina la carga académica basada en créditos y horas semanales
+     */
+    private String determinarCargaAcademica(Integer creditos, Integer horasSemanales) {
+        if (creditos == null) creditos = 0;
+        if (horasSemanales == null) horasSemanales = 0;
+        
+        // Calcular un puntaje combinado
+        int puntaje = creditos * 2 + horasSemanales;
+        
+        if (puntaje <= 8) {
+            return "Baja";
+        } else if (puntaje <= 16) {
+            return "Media";
+        } else {
+            return "Alta";
+        }
+    }
+    
+    // ============ MÉTODOS ORIGINALES PARA COMPATIBILIDAD ============
+    
+    @Transactional(readOnly = true)
+    public List<Curso> obtenerTodos() {
+        try {
+            return cursoRepository.findAll();
+        } catch (Exception e) {
+            throw new RuntimeException("Error al obtener los cursos: " + e.getMessage());
+        }
+    }
+    
+    @Transactional(readOnly = true)
+    public Optional<Curso> obtenerPorId(Long id) {
+        if (id == null || id <= 0) {
+            throw new IllegalArgumentException("El ID debe ser un número positivo");
+        }
+        
+        try {
+            return cursoRepository.findById(id);
+        } catch (Exception e) {
+            throw new RuntimeException("Error al buscar el curso: " + e.getMessage());
+        }
+    }
+    
     @Transactional(readOnly = true)
     public Optional<Curso> buscarPorCodigo(String codigo) {
         if (codigo == null || codigo.trim().isEmpty()) {
@@ -147,29 +291,6 @@ public class CursoService {
         }
     }
     
-    /**
-     * Buscar cursos por nombre
-     * @param nombre Nombre del curso (búsqueda parcial)
-     * @return Lista de cursos que contienen el nombre
-     */
-    @Transactional(readOnly = true)
-    public List<Curso> buscarPorNombre(String nombre) {
-        if (nombre == null || nombre.trim().isEmpty()) {
-            throw new IllegalArgumentException("El nombre no puede estar vacío");
-        }
-        
-        try {
-            return cursoRepository.findByNombreContainingIgnoreCase(nombre.trim());
-        } catch (Exception e) {
-            throw new RuntimeException("Error al buscar cursos por nombre: " + e.getMessage());
-        }
-    }
-    
-    /**
-     * Buscar cursos por número de créditos
-     * @param creditos Número de créditos
-     * @return Lista de cursos con ese número de créditos
-     */
     @Transactional(readOnly = true)
     public List<Curso> buscarPorCreditos(Integer creditos) {
         if (creditos == null || creditos <= 0) {
@@ -183,10 +304,6 @@ public class CursoService {
         }
     }
     
-    /**
-     * Obtener cursos ordenados por créditos (ascendente)
-     * @return Lista de cursos ordenados por créditos
-     */
     @Transactional(readOnly = true)
     public List<Curso> obtenerOrdenadosPorCreditos() {
         try {
@@ -196,11 +313,6 @@ public class CursoService {
         }
     }
     
-    /**
-     * Verificar si existe un curso con el código dado
-     * @param codigo Código a verificar
-     * @return true si existe, false en caso contrario
-     */
     @Transactional(readOnly = true)
     public boolean existePorCodigo(String codigo) {
         if (codigo == null || codigo.trim().isEmpty()) {
@@ -216,8 +328,6 @@ public class CursoService {
     
     /**
      * Validar los datos de un curso
-     * @param curso El curso a validar
-     * @throws IllegalArgumentException si los datos no son válidos
      */
     private void validarCurso(Curso curso) {
         if (curso == null) {
