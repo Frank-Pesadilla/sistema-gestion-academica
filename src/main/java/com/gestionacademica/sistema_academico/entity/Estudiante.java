@@ -4,6 +4,8 @@ import jakarta.persistence.*;
 import jakarta.validation.constraints.*;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import jakarta.persistence.*;
+import java.util.List;
 
 @Entity
 @Table(name = "estudiantes")
@@ -55,6 +57,18 @@ public class Estudiante {
     @PreUpdate
     protected void onUpdate() {
         updatedAt = LocalDateTime.now();
+    }
+    
+    @OneToMany(mappedBy = "estudiante", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    private List<Inscripcion> inscripciones;
+
+    // Agregar estos getters y setters:
+    public List<Inscripcion> getInscripciones() {
+        return inscripciones;
+    }
+
+    public void setInscripciones(List<Inscripcion> inscripciones) {
+        this.inscripciones = inscripciones;
     }
     
     // Constructor vacío (requerido por JPA)

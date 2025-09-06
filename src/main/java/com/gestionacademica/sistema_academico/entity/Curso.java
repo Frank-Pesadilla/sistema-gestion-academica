@@ -3,6 +3,8 @@ package com.gestionacademica.sistema_academico.entity;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.*;
 import java.time.LocalDateTime;
+import jakarta.persistence.*;
+import java.util.List;
 
 @Entity
 @Table(name = "cursos")
@@ -50,6 +52,30 @@ public class Curso {
     protected void onUpdate() {
         updatedAt = LocalDateTime.now();
     }
+
+    @ManyToOne(fetch = FetchType.LAZY)
+@JoinColumn(name = "profesor_id", nullable = false)
+private Profesor profesor;
+
+@OneToMany(mappedBy = "curso", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+private List<Inscripcion> inscripciones;
+
+// Agregar estos getters y setters:
+public Profesor getProfesor() {
+    return profesor;
+}
+
+public void setProfesor(Profesor profesor) {
+    this.profesor = profesor;
+}
+
+public List<Inscripcion> getInscripciones() {
+    return inscripciones;
+}
+
+public void setInscripciones(List<Inscripcion> inscripciones) {
+    this.inscripciones = inscripciones;
+}
     
     // Constructor vacío (requerido por JPA)
     public Curso() {}
